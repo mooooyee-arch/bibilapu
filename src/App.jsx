@@ -242,43 +242,20 @@ export default function App() {
 
 // ═══════════ AUTH ═══════════
 function AuthModal({ close }) {
-  const [mode, setMode] = useState('login')
-  const [f, setF] = useState({ name: '', email: '', password: '' })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const upd = (k, v) => setF(p => ({ ...p, [k]: v }))
 
-  const submit = async () => {
-    if (!f.email || !f.password) return setErr('請填寫所有欄位')
-    if (mode === 'register' && !f.name) return setErr('請填寫暱稱')
+  const loginWithDiscord = async () => {
     setBusy(true)
     setErr('')
-
-    if (mode === 'register') {
-      const { error } = await supabase.auth.signUp({
-        email: f.email,
-        password: f.password,
-        options: { data: { name: f.name } }
-      })
-      if (error) { setErr(error.message); setBusy(false); return }
-      close()
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: f.email, password: f.password,
-      })
-      if (error) { setErr('帳號或密碼錯誤'); setBusy(false); return }
-      close()
-    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: {
+        redirectTo: window.location.origin,
+      }
+    })
+    if (error) { setErr(error.message); setBusy(false) }
   }
-
-  const inp = (ph, k, type = 'text') => (
-    <input placeholder={ph} type={type} value={f[k]} onChange={e => upd(k, e.target.value)}
-      onKeyDown={e => e.key === 'Enter' && submit()}
-      style={{
-        background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
-        borderRadius: 10, padding: '11px 14px', color: T.text, fontSize: 14, width: '100%',
-      }} />
-  )
 
   return (
     <div onClick={close} style={{
@@ -287,28 +264,32 @@ function AuthModal({ close }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} className="fu" style={{
-        background: T.surface, borderRadius: 18, padding: 28, width: '100%', maxWidth: 380,
-        border: `1px solid ${T.border}`,
+        background: T.surface, borderRadius: 18, padding: 32, width: '100%', maxWidth: 380,
+        border: `1px solid ${T.border}`, textAlign: 'center',
       }}>
-        <h2 style={{ fontFamily: 'Sora', fontSize: 22, fontWeight: 700, textAlign: 'center', marginBottom: 20 }}>
-          {mode === 'login' ? '歡迎回來' : '建立帳號'}
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🎮</div>
+        <h2 style={{ fontFamily: 'Sora', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+          登入比比拉普
         </h2>
+        <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24 }}>
+          使用 Discord 帳號快速登入
+        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {mode === 'register' && inp('暱稱', 'name')}
-          {inp('Email', 'email', 'email')}
-          {inp('密碼（至少6位）', 'password', 'password')}
-          {err && <div style={{ color: T.danger, fontSize: 12, textAlign: 'center' }}>{err}</div>}
-          <button onClick={submit} disabled={busy} style={{
-            background: T.gradBtn, color: '#fff', border: 'none',
-            padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 600, marginTop: 4,
-            opacity: busy ? .6 : 1,
-          }}>{busy ? '處理中...' : mode === 'login' ? '登入' : '註冊'}</button>
-          <div style={{ textAlign: 'center', fontSize: 12, color: T.textSub }}>
-            {mode === 'login' ? '還沒有帳號？' : '已有帳號？'}
-            <span onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr('') }}
-              style={{ color: T.accent, cursor: 'pointer', marginLeft: 4 }}>
-              {mode === 'login' ? '註冊' : '登入'}
-            </span>
+          {err && <div style={{ color: T.danger, fontSize: 12 }}>{err}</div>}
+          <button onClick={loginWithDiscord} disabled={busy} style={{
+            background: '#5865F2', color: '#fff', border: 'none',
+            padding: '13px 20px', borderRadius: 12, fontSize: 15, fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            opacity: busy ? .6 : 1, transition: 'opacity .2s',
+            boxShadow: '0 4px 16px rgba(88,101,242,.3)',
+          }}>
+            <svg width="20" height="15" viewBox="0 0 71 55" fill="none">
+              <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 4.9a.2.2 0 00-.1.1C1.5 18.7-.9 32.2.3 45.5v.1a58.7 58.7 0 0017.7 9a.2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 010-.4c.4-.3.7-.6 1.1-.8a.2.2 0 01.2 0c11.5 5.3 24 5.3 35.4 0a.2.2 0 01.3 0l1 .9a.2.2 0 010 .3 36.3 36.3 0 01-5.5 2.6.2.2 0 00-.1.4 47.2 47.2 0 003.6 5.8.2.2 0 00.3.1 58.5 58.5 0 0017.7-9v-.1c1.4-15-2.3-28.4-9.8-40.1a.2.2 0 00-.1-.1zM23.7 37.3c-3.5 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.2 6.3 7-2.8 7-6.3 7zm23.2 0c-3.5 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.2 6.3 7-2.8 7-6.3 7z" fill="white"/>
+            </svg>
+            {busy ? '連線中...' : '使用 Discord 登入'}
+          </button>
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+            登入後可在個人頁面綁定 Gmail
           </div>
         </div>
       </div>
@@ -660,17 +641,73 @@ function InfoRow({ label, val, hl }) {
 
 // ═══════════ PROFILE ═══════════
 function ProfilePage({ profile, orders, isDesktop }) {
+  const [gmail, setGmail] = useState(profile?.gmail || '')
+  const [gmailSaved, setGmailSaved] = useState(false)
+  const [gmailEditing, setGmailEditing] = useState(false)
+
+  const saveGmail = async () => {
+    const { error } = await supabase.from('profiles').update({ gmail }).eq('id', profile.id)
+    if (!error) { setGmailSaved(true); setGmailEditing(false); setTimeout(() => setGmailSaved(false), 2000) }
+  }
+
+  const discordName = profile?.name || '用戶'
+  const avatarUrl = profile?.avatar_url
+
   return (
     <div>
-      <div className="fu" style={{ background: T.surface, borderRadius: 16, padding: isDesktop ? 28 : 22, border: `1px solid ${T.border}`, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ width: 52, height: 52, borderRadius: '50%', background: T.gradBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: '#fff', fontFamily: 'Sora', flexShrink: 0 }}>{(profile?.name || '?')[0]}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'Sora' }}>{profile?.name || '用戶'}</div>
-          <div style={{ color: T.textSub, fontSize: 12, marginTop: 2 }}>{profile?.email}</div>
+      <div className="fu" style={{ background: T.surface, borderRadius: 16, padding: isDesktop ? 28 : 22, border: `1px solid ${T.border}`, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+          {avatarUrl ? (
+            <img src={avatarUrl} style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: T.gradBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: '#fff', fontFamily: 'Sora', flexShrink: 0 }}>{discordName[0]}</div>
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'Sora' }}>{discordName}</div>
+            <div style={{ color: T.textSub, fontSize: 12, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="14" height="11" viewBox="0 0 71 55" fill="none"><path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 4.9a.2.2 0 00-.1.1C1.5 18.7-.9 32.2.3 45.5v.1a58.7 58.7 0 0017.7 9a.2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 010-.4c.4-.3.7-.6 1.1-.8a.2.2 0 01.2 0c11.5 5.3 24 5.3 35.4 0a.2.2 0 01.3 0l1 .9a.2.2 0 010 .3 36.3 36.3 0 01-5.5 2.6.2.2 0 00-.1.4 47.2 47.2 0 003.6 5.8.2.2 0 00.3.1 58.5 58.5 0 0017.7-9v-.1c1.4-15-2.3-28.4-9.8-40.1a.2.2 0 00-.1-.1zM23.7 37.3c-3.5 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.2 6.3 7-2.8 7-6.3 7zm23.2 0c-3.5 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.2 6.3 7-2.8 7-6.3 7z" fill="#5865F2"/></svg>
+              Discord 登入
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Sora' }}>{orders.length}</div>
+            <div style={{ fontSize: 11, color: T.textSub }}>總訂單</div>
+          </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Sora' }}>{orders.length}</div>
-          <div style={{ fontSize: 11, color: T.textSub }}>總訂單</div>
+
+        {/* Gmail 綁定區塊 */}
+        <div style={{
+          background: T.surfaceAlt, borderRadius: 12, padding: '14px 18px',
+          border: `1px solid ${T.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: gmailEditing ? 10 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16 }}>📧</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>
+                {profile?.gmail ? profile.gmail : 'Gmail 尚未綁定'}
+              </span>
+              {gmailSaved && <span style={{ color: T.success, fontSize: 11 }}>✓ 已儲存</span>}
+            </div>
+            <button onClick={() => setGmailEditing(!gmailEditing)} style={{
+              background: 'rgba(255,255,255,.04)', color: T.textSub,
+              border: `1px solid ${T.border}`, padding: '4px 12px',
+              borderRadius: 6, fontSize: 11,
+            }}>{gmailEditing ? '取消' : profile?.gmail ? '修改' : '綁定'}</button>
+          </div>
+          {gmailEditing && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={gmail} onChange={e => setGmail(e.target.value)}
+                placeholder="your@gmail.com" type="email"
+                style={{
+                  flex: 1, background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+                  borderRadius: 8, padding: '8px 12px', color: T.text, fontSize: 13,
+                }} />
+              <button onClick={saveGmail} style={{
+                background: T.gradBtn, color: '#fff', border: 'none',
+                padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              }}>儲存</button>
+            </div>
+          )}
         </div>
       </div>
       <Sec title="📋 我的訂單">
