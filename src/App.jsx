@@ -233,7 +233,7 @@ export default function App() {
             ? <DesktopOrder catalog={catalogTree} user={user} addOrder={addOrder} auth={() => setShowAuth(true)} />
             : <MobileOrder catalog={catalogTree} user={user} addOrder={addOrder} auth={() => setShowAuth(true)} />
         )}
-        {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} isDesktop={isDesktop} />}
+        {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} isDesktop={isDesktop} loadOrders={loadOrders} />}
         {page === 'admin' && isAdmin && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} />}
       </div>
     </div>
@@ -640,10 +640,19 @@ function InfoRow({ label, val, hl }) {
 }
 
 // ═══════════ PROFILE ═══════════
-function ProfilePage({ profile, orders, isDesktop }) {
+function ProfilePage({ profile, orders, isDesktop, loadOrders }) {
   const [gmail, setGmail] = useState(profile?.gmail || '')
   const [gmailSaved, setGmailSaved] = useState(false)
   const [gmailEditing, setGmailEditing] = useState(false)
+  const [cancelling, setCancelling] = useState(null)
+
+  const cancelOrder = async (id) => {
+    if (!confirm('確定要取消這筆訂單嗎？')) return
+    setCancelling(id)
+    await supabase.from('orders').update({ status: 'cancelled' }).eq('id', id)
+    await loadOrders()
+    setCancelling(null)
+  }
 
   const saveGmail = async () => {
     const { error } = await supabase.from('profiles').update({ gmail }).eq('id', profile.id)
@@ -731,7 +740,17 @@ function ProfilePage({ profile, orders, isDesktop }) {
                 <span style={{ color: T.accent, fontWeight: 600 }}>{o.price}</span>
               </div>
               {o.note && <div style={{ marginTop: 6, fontSize: 12, color: T.textMuted }}>💬 {o.note}</div>}
-              <div style={{ marginTop: 6, fontSize: 10, color: T.textMuted }}>#{o.id.slice(0, 8)} · {new Date(o.created_at).toLocaleString('zh-TW')}</div>
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: T.textMuted }}>#{o.id.slice(0, 8)} · {new Date(o.created_at).toLocaleString('zh-TW')}</span>
+                {(o.status === 'pending') && (
+                  <button onClick={() => cancelOrder(o.id)} disabled={cancelling === o.id} style={{
+                    background: 'rgba(248,113,113,.08)', color: T.danger,
+                    border: `1px solid rgba(248,113,113,.15)`, padding: '4px 12px',
+                    borderRadius: 6, fontSize: 11, fontWeight: 500,
+                    opacity: cancelling === o.id ? .5 : 1,
+                  }}>{cancelling === o.id ? '取消中...' : '取消訂單'}</button>
+                )}
+              </div>
             </div>
           )
         })}
