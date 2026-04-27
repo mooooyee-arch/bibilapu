@@ -273,7 +273,7 @@ export default function App() {
             : <MobileOrder catalog={catalogTree} staff={staff} user={user} profile={profile} addOrder={addOrder} auth={() => setShowAuth(true)} />
         )}
         {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} staff={staff} isDesktop={isDesktop} loadOrders={loadOrders} reloadProfile={() => loadProfile(user.id)} />}
-        {page === 'admin' && isAdmin && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} />}
+        {page === 'admin' && isAdmin && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} ann={ann} reloadAnnouncements={loadAnnouncements} />}
       </div>
     </div>
   )
@@ -355,7 +355,7 @@ function HomePage({ ann, catalog, staff, go, isDesktop }) {
           <span style={{ background: T.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>比比拉普</span>
         </h1>
         <p className="fu" style={{ color: T.textSub, fontSize: isDesktop ? 17 : 14, marginBottom: 32, position: 'relative', animationDelay: '.1s' }}>
-          專業遊戲工作室 — 安全・迅速・保密
+          專業遊戲代練工作室 — 安全・迅速・保密
         </p>
         <button className="fu hlift" onClick={() => go('order')} style={{
           background: T.gradBtn, color: '#fff', border: 'none',
@@ -379,7 +379,19 @@ function HomePage({ ann, catalog, staff, go, isDesktop }) {
               <span style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</span>
               <span style={{ color: T.textMuted, fontSize: 11 }}>{new Date(a.published_at).toLocaleDateString('zh-TW')}</span>
             </div>
-            <p style={{ color: T.textSub, fontSize: 13, lineHeight: 1.6 }}>{a.body}</p>
+            {a.body && <p style={{ color: T.textSub, fontSize: 13, lineHeight: 1.6 }}>{a.body}</p>}
+            {a.link_url && (
+              <a href={a.link_url} target="_blank" rel="noopener noreferrer" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                marginTop: 10, padding: '6px 14px',
+                background: T.accentSoft, color: T.accent,
+                border: `1px solid rgba(129,140,248,.25)`, borderRadius: 8,
+                fontSize: 12, fontWeight: 600, textDecoration: 'none',
+              }}>
+                {a.link_label || '查看詳情'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+              </a>
+            )}
           </div>
         ))}
       </Sec>
@@ -1329,29 +1341,201 @@ function ProfilePage({ profile, orders, staff, isDesktop, loadOrders, reloadProf
   )
 }
 
-// ═══════════ ADMIN ═══════════
-function AdminPage({ catalog, catalogTree, reload, orders, loadOrders, staff, reloadStaff }) {
-  const [tab, setTab] = useState('catalog')
-  return (
-    <div>
-      <h1 className="fu" style={{ fontFamily: 'Sora', fontSize: 22, fontWeight: 800, marginBottom: 6 }}>⚙️ 後台管理</h1>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 18 }}>管理品項、員工與訂單</p>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, flexWrap: 'wrap' }}>
-        {[
-          { k: 'catalog', l: '品項管理' },
-          { k: 'staff', l: '員工管理' },
-          { k: 'orders', l: '訂單管理' },
-        ].map(t => (
-          <button key={t.k} onClick={() => { setTab(t.k); if (t.k === 'orders') loadOrders() }} style={{
-            background: tab === t.k ? T.accentSoft : 'transparent', color: tab === t.k ? T.accent : T.textSub,
-            border: `1px solid ${tab === t.k ? 'rgba(129,140,248,.2)' : 'transparent'}`,
-            padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-          }}>{t.l}</button>
-        ))}
+// ═══════════ ADMIN — 工具包式後台 ═══════════
+// ─────────────────────────────────────────────────────────────
+// 工具包註冊表：
+//   要新增工具包，只要：
+//     1. 寫一個新的 React 元件（接收 ctx prop，從中拿到所需資料）
+//     2. 在下面 ADMIN_TOOLS 陣列加一筆 { id, label, group, icon, render }
+//   左側選單會自動長出來，不用改其他地方。
+// ─────────────────────────────────────────────────────────────
+
+// ─── 線條 icons（內嵌 SVG，避免裝額外套件） ───
+const Icon = {
+  catalog: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
+  staff: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+  orders: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>,
+  home: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+  chevron: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
+  collapse: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
+  menu: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
+}
+
+// ─── 工具包註冊表 ───
+const ADMIN_TOOLS = [
+  {
+    id: 'catalog',
+    label: '品項管理',
+    group: '營運',
+    icon: 'catalog',
+    description: '上下架商品、設定點數、上傳圖片、自訂下單表單',
+    render: (ctx) => <CatalogAdmin catalog={ctx.catalog} tree={ctx.catalogTree} reload={ctx.reload} />,
+  },
+  {
+    id: 'staff',
+    label: '員工管理',
+    group: '營運',
+    icon: 'staff',
+    description: '新增員工、設定接單狀態與標籤',
+    render: (ctx) => <StaffAdmin staff={ctx.staff} reload={ctx.reloadStaff} />,
+  },
+  {
+    id: 'orders',
+    label: '訂單管理',
+    group: '營運',
+    icon: 'orders',
+    description: '查看所有訂單、指派員工、更新狀態',
+    onActivate: (ctx) => ctx.loadOrders?.(),
+    render: (ctx) => <OrderAdmin orders={ctx.orders} loadOrders={ctx.loadOrders} staff={ctx.staff} />,
+  },
+  {
+    id: 'announcements',
+    label: '主頁管理',
+    group: '內容',
+    icon: 'home',
+    description: '管理首頁公告、可附帶連結',
+    render: (ctx) => <AnnouncementAdmin ann={ctx.ann} reload={ctx.reloadAnnouncements} />,
+  },
+  // 之後要加新工具，在這裡加一筆即可
+  // { id: 'finance', label: '會計報表', group: '財務', icon: '...', render: (ctx) => <FinanceAdmin /> },
+]
+
+function AdminPage(ctx) {
+  const [activeId, setActiveId] = useState(ADMIN_TOOLS[0].id)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const isDesktop = useIsDesktop(900)
+  const active = ADMIN_TOOLS.find(t => t.id === activeId) || ADMIN_TOOLS[0]
+
+  // 切換工具時觸發 onActivate（例如載入訂單）
+  useEffect(() => {
+    active?.onActivate?.(ctx)
+    setSidebarOpen(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId])
+
+  // 把工具按 group 分組（保留註冊順序）
+  const groups = []
+  const groupMap = {}
+  ADMIN_TOOLS.forEach(t => {
+    const g = t.group || '其他'
+    if (!groupMap[g]) {
+      groupMap[g] = { name: g, items: [] }
+      groups.push(groupMap[g])
+    }
+    groupMap[g].items.push(t)
+  })
+
+  const SidebarContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ padding: '4px 14px 14px', borderBottom: `1px solid ${T.border}`, marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, letterSpacing: '1.5px', fontWeight: 600, marginBottom: 4 }}>BIBILAPU</div>
+        <div style={{ fontFamily: 'Sora', fontSize: 16, fontWeight: 700 }}>後台管理</div>
       </div>
-      {tab === 'catalog' && <CatalogAdmin catalog={catalog} tree={catalogTree} reload={reload} />}
-      {tab === 'staff' && <StaffAdmin staff={staff} reload={reloadStaff} />}
-      {tab === 'orders' && <OrderAdmin orders={orders} loadOrders={loadOrders} staff={staff} />}
+      {groups.map(g => (
+        <div key={g.name} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: '1.5px', padding: '6px 14px 4px' }}>{g.name.toUpperCase()}</div>
+          {g.items.map(t => {
+            const isActive = activeId === t.id
+            return (
+              <button key={t.id} onClick={() => setActiveId(t.id)} style={{
+                background: isActive ? T.accentSoft : 'transparent',
+                color: isActive ? T.accent : T.textSub,
+                border: 'none', padding: '9px 14px', borderRadius: 8,
+                fontSize: 13, fontWeight: isActive ? 600 : 500,
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+                transition: 'all .15s',
+                position: 'relative',
+              }}>
+                {isActive && <span style={{ position: 'absolute', left: 0, top: '20%', height: '60%', width: 2, borderRadius: '0 2px 2px 0', background: T.accent }} />}
+                <span style={{ display: 'inline-flex', opacity: isActive ? 1 : .6 }}>{Icon[t.icon] || Icon.catalog}</span>
+                <span>{t.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '220px 1fr' : '1fr', gap: isDesktop ? 18 : 0, alignItems: 'start' }}>
+      {/* 桌面版側邊欄 */}
+      {isDesktop && (
+        <aside style={{
+          background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`,
+          padding: '18px 8px', position: 'sticky', top: 76, alignSelf: 'start',
+        }}>
+          {SidebarContent}
+        </aside>
+      )}
+
+      {/* 手機版工具切換按鈕 */}
+      {!isDesktop && (
+        <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+          background: T.surface, color: T.text,
+          border: `1px solid ${T.border}`, borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', cursor: 'pointer',
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {Icon.menu}
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{active.label}</span>
+          </span>
+          <span style={{ color: T.textMuted, transform: sidebarOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>{Icon.collapse}</span>
+        </button>
+      )}
+
+      {/* 手機版下拉選單 */}
+      {!isDesktop && sidebarOpen && (
+        <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, padding: '10px 6px', marginBottom: 14 }}>
+          {SidebarContent}
+        </div>
+      )}
+
+      {/* 內容區 */}
+      <main style={{ minWidth: 0 }}>
+        <div className="fi" style={{ marginBottom: 16 }}>
+          <h1 style={{ fontFamily: 'Sora', fontSize: 22, fontWeight: 800, marginBottom: 4 }}>{active.label}</h1>
+          {active.description && <p style={{ color: T.textSub, fontSize: 13 }}>{active.description}</p>}
+        </div>
+        <div className="fi">
+          {active.render(ctx)}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// ═══════════ COLLAPSIBLE SECTION（給工具內部用，避免內容凌亂） ═══════════
+function Collapsible({ title, count, children, defaultOpen = false, accent }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{
+      background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`,
+      marginBottom: 8, overflow: 'hidden',
+    }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: '100%', background: 'transparent', border: 'none',
+        padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10,
+        color: T.text, cursor: 'pointer', textAlign: 'left',
+      }}>
+        <span style={{ color: open ? (accent || T.accent) : T.textMuted, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .2s', display: 'inline-flex' }}>
+          {Icon.chevron}
+        </span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{title}</span>
+        {count !== undefined && (
+          <span style={{ fontSize: 10, color: T.textMuted, background: T.surfaceAlt, padding: '2px 8px', borderRadius: 10, fontFamily: 'Sora', fontWeight: 600 }}>
+            {count}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="fi" style={{ padding: '4px 16px 14px', borderTop: `1px solid ${T.border}` }}>
+          {children}
+        </div>
+      )}
     </div>
   )
 }
@@ -1870,6 +2054,148 @@ function OrderAdmin({ orders, loadOrders, staff }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ═══════════ ANNOUNCEMENT ADMIN ═══════════
+function AnnouncementAdmin({ ann, reload }) {
+  const [editing, setEditing] = useState(null)  // null | { id, ... } | 'new'
+  const [form, setForm] = useState({ title: '', body: '', link_url: '', link_label: '' })
+  const [saving, setSaving] = useState(false)
+
+  const startNew = () => {
+    setForm({ title: '', body: '', link_url: '', link_label: '' })
+    setEditing('new')
+  }
+
+  const startEdit = (a) => {
+    setForm({
+      title: a.title || '',
+      body: a.body || '',
+      link_url: a.link_url || '',
+      link_label: a.link_label || '',
+    })
+    setEditing(a)
+  }
+
+  const cancel = () => { setEditing(null); setForm({ title: '', body: '', link_url: '', link_label: '' }) }
+
+  const save = async () => {
+    if (!form.title.trim()) { alert('請填寫標題'); return }
+    if (form.link_url && !/^https?:\/\//i.test(form.link_url.trim())) {
+      alert('連結必須以 http:// 或 https:// 開頭'); return
+    }
+    setSaving(true)
+    const payload = {
+      title: form.title.trim(),
+      body: form.body.trim(),
+      link_url: form.link_url.trim() || null,
+      link_label: form.link_label.trim() || null,
+    }
+    let error
+    if (editing === 'new') {
+      const res = await supabase.from('announcements').insert({
+        ...payload,
+        published_at: new Date().toISOString(),
+      })
+      error = res.error
+    } else {
+      const res = await supabase.from('announcements').update(payload).eq('id', editing.id)
+      error = res.error
+    }
+    setSaving(false)
+    if (error) { alert('儲存失敗：' + error.message); return }
+    cancel()
+    reload?.()
+  }
+
+  const del = async (a) => {
+    if (!confirm(`確定刪除公告「${a.title}」？`)) return
+    await supabase.from('announcements').delete().eq('id', a.id)
+    reload?.()
+  }
+
+  const Editor = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Si label="標題（必填）" val={form.title} onChange={v => setForm({ ...form, title: v })} flex={1} />
+      <div>
+        <div style={{ fontSize: 9, color: T.textMuted, marginBottom: 2 }}>內文</div>
+        <textarea value={form.body} onChange={e => setForm({ ...form, body: e.target.value })}
+          placeholder="公告詳細內容..." style={{
+            background: 'rgba(255,255,255,.03)', border: `1px solid ${T.border}`,
+            borderRadius: 5, padding: '8px 10px', color: T.text, fontSize: 12,
+            width: '100%', minHeight: 90, resize: 'vertical',
+          }} />
+      </div>
+      <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 8, border: `1px dashed ${T.border}` }}>
+        <div style={{ fontSize: 11, color: T.textSub, fontWeight: 600, marginBottom: 8 }}>選填：附加連結</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Si label="連結網址（http:// 或 https:// 開頭）" val={form.link_url} onChange={v => setForm({ ...form, link_url: v })} flex={1} />
+          <Si label="連結按鈕文字（例如：查看詳情、立即報名）" val={form.link_label} onChange={v => setForm({ ...form, link_label: v })} flex={1} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={save} disabled={saving} style={{ background: T.gradBtn, color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 7, fontSize: 12, fontWeight: 600, opacity: saving ? .6 : 1 }}>
+          {saving ? '儲存中...' : '儲存公告'}
+        </button>
+        <button onClick={cancel} style={{ background: 'transparent', color: T.textSub, border: `1px solid ${T.border}`, padding: '8px 22px', borderRadius: 7, fontSize: 12 }}>取消</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div>
+      {!editing && (
+        <button onClick={startNew} style={{
+          background: T.accentSoft, color: T.accent,
+          border: `1px dashed rgba(129,140,248,.25)`,
+          padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 500,
+          width: '100%', marginBottom: 12,
+        }}>+ 新增公告</button>
+      )}
+
+      {editing === 'new' && (
+        <Collapsible title="新增公告" defaultOpen>
+          {Editor}
+        </Collapsible>
+      )}
+
+      {ann.length === 0 && editing !== 'new' && (
+        <div style={{ textAlign: 'center', padding: 30, color: T.textMuted, background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+          目前沒有公告，點上方按鈕新增
+        </div>
+      )}
+
+      {ann.map(a => (
+        editing && editing.id === a.id ? (
+          <Collapsible key={a.id} title={`編輯：${a.title}`} defaultOpen>
+            {Editor}
+          </Collapsible>
+        ) : (
+          <div key={a.id} style={{
+            background: T.surface, borderRadius: 10, padding: '12px 16px',
+            border: `1px solid ${T.border}`, marginBottom: 6,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{a.title}</div>
+                <div style={{ fontSize: 10, color: T.textMuted }}>{new Date(a.published_at).toLocaleString('zh-TW')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                <Mb onClick={() => startEdit(a)}>編輯</Mb>
+                <Mb onClick={() => del(a)} d>刪除</Mb>
+              </div>
+            </div>
+            {a.body && <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.6 }}>{a.body}</div>}
+            {a.link_url && (
+              <div style={{ marginTop: 6, fontSize: 11, color: T.accent, display: 'flex', alignItems: 'center', gap: 4 }}>
+                🔗 {a.link_label || '查看詳情'} → <span style={{ color: T.textMuted, fontSize: 10 }}>{a.link_url}</span>
+              </div>
+            )}
+          </div>
+        )
+      ))}
     </div>
   )
 }
