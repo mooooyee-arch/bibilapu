@@ -73,6 +73,8 @@ export default function App() {
   const [staff, setStaff] = useState([])
   const [orders, setOrders] = useState([])
   const [ann, setAnn] = useState([])
+  const [fxRates, setFxRates] = useState([])
+  const [prefCurrency, setPrefCurrency] = useState(() => localStorage.getItem('bibi_pref_currency') || 'TWD')
   const [showAuth, setShowAuth] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -89,6 +91,7 @@ export default function App() {
       await loadCatalog()
       await loadStaff()
       await loadAnnouncements()
+      await loadFxRates()
       setLoading(false)
     }
     init()
@@ -128,6 +131,11 @@ export default function App() {
     if (data) setAnn(data)
   }
 
+  const loadFxRates = async () => {
+    const { data } = await supabase.from('fx_rates').select('*').eq('active', true).order('sort_order')
+    if (data) setFxRates(data)
+  }
+
   const loadOrders = useCallback(async () => {
     if (!user) return
     const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false })
@@ -135,6 +143,8 @@ export default function App() {
   }, [user])
 
   useEffect(() => { if (user) loadOrders() }, [user, loadOrders])
+
+  useEffect(() => { localStorage.setItem('bibi_pref_currency', prefCurrency) }, [prefCurrency])
 
   // ── Add order (v3 — 支援 staff、form_data、points_cost) ──
   const addOrder = async (o) => {
@@ -174,6 +184,7 @@ export default function App() {
   const isStaff = role === 'staff'
   const isRunner = role === 'runner'
   const canAccessBackoffice = isAdmin || isStaff
+  const isEmployee = isStaff || isRunner  // 有員工儀表板的角色
   const can = (key) => isAdmin || (isStaff && !!perms[key])
 
   if (loading) return (
@@ -217,11 +228,12 @@ export default function App() {
           <div style={{ display: 'flex', gap: 2 }}>
             {[
               { k: 'home', l: '首頁' }, { k: 'order', l: '下單' }, { k: 'profile', l: '我的' },
+              ...(isEmployee ? [{ k: 'employee', l: '員工' }] : []),
               ...(canAccessBackoffice ? [{ k: 'admin', l: '後台' }] : []),
             ].map(n => (
               <button key={n.k} onClick={() => {
-                if ((n.k === 'profile' || n.k === 'admin') && !user) { setShowAuth(true); return }
-                if (n.k === 'profile' || n.k === 'admin') loadOrders()
+                if ((n.k === 'profile' || n.k === 'admin' || n.k === 'employee') && !user) { setShowAuth(true); return }
+                if (n.k === 'profile' || n.k === 'admin' || n.k === 'employee') loadOrders()
                 setPage(n.k)
               }} style={{
                 background: page === n.k ? T.accentSoft : 'transparent',
@@ -282,7 +294,8 @@ export default function App() {
             : <MobileOrder catalog={catalogTree} staff={staff} user={user} profile={profile} addOrder={addOrder} auth={() => setShowAuth(true)} />
         )}
         {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} staff={staff} isDesktop={isDesktop} loadOrders={loadOrders} reloadProfile={() => loadProfile(user.id)} role={role} openInvite={() => setShowInvite(true)} />}
-        {page === 'admin' && canAccessBackoffice && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} ann={ann} reloadAnnouncements={loadAnnouncements} role={role} can={can} profile={profile} reloadProfile={() => loadProfile(user.id)} />}
+        {page === 'employee' && isEmployee && user && <EmployeeDashboard profile={profile} orders={orders} staff={staff} fxRates={fxRates} prefCurrency={prefCurrency} setPrefCurrency={setPrefCurrency} loadOrders={loadOrders} reloadStaff={loadStaff} reloadProfile={() => loadProfile(user.id)} isDesktop={isDesktop} />}
+        {page === 'admin' && canAccessBackoffice && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} ann={ann} reloadAnnouncements={loadAnnouncements} role={role} can={can} profile={profile} reloadProfile={() => loadProfile(user.id)} fxRates={fxRates} reloadFxRates={loadFxRates} />}
       </div>
     </div>
   )
@@ -1489,6 +1502,8 @@ const Icon = {
   home: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
   shield: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
   ticket: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><line x1="13" y1="5" x2="13" y2="7"/><line x1="13" y1="11" x2="13" y2="13"/><line x1="13" y1="17" x2="13" y2="19"/></svg>,
+  fx: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+  pool: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>,
   chevron: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
   collapse: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
   menu: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
@@ -1522,6 +1537,15 @@ const ADMIN_TOOLS = [
     render: (ctx) => <OrderAdmin orders={ctx.orders} loadOrders={ctx.loadOrders} staff={ctx.staff} />,
   },
   {
+    id: 'pool',
+    label: '派單池監控',
+    group: '營運',
+    icon: 'pool',
+    description: '查看每位員工的派單狀態，重新指派訂單',
+    onActivate: (ctx) => ctx.loadOrders?.(),
+    render: (ctx) => <AssignmentPoolAdmin orders={ctx.orders} staff={ctx.staff} loadOrders={ctx.loadOrders} reloadStaff={ctx.reloadStaff} />,
+  },
+  {
     id: 'announcements',
     label: '主頁管理',
     group: '內容',
@@ -1546,6 +1570,15 @@ const ADMIN_TOOLS = [
     description: '調整使用者角色與 Staff 細部權限（僅 Admin）',
     requires: (ctx) => ctx.role === 'admin',
     render: (ctx) => <PermissionAdmin currentUserId={ctx.profile?.id} />,
+  },
+  {
+    id: 'fx',
+    label: '會計設定',
+    group: '財務',
+    icon: 'fx',
+    description: '設定點數對各幣別的換算匯率（員工儀表板會用）',
+    requires: (ctx) => ctx.role === 'admin',
+    render: (ctx) => <FxAdmin fxRates={ctx.fxRates} reload={ctx.reloadFxRates} />,
   },
   // 之後要加新工具，在這裡加一筆即可
   // { id: 'finance', label: '會計報表', group: '財務', icon: '...', requires: (ctx) => ctx.role === 'admin', render: (ctx) => <FinanceAdmin /> },
@@ -1963,6 +1996,8 @@ function StaffAdmin({ staff, reload }) {
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState({})
   const [uploading, setUploading] = useState(false)
+  const [profileSearch, setProfileSearch] = useState('')
+  const [profileMatches, setProfileMatches] = useState([])
   const fileRef = useRef(null)
 
   const startEdit = (s) => {
@@ -1976,7 +2011,21 @@ function StaffAdmin({ staff, reload }) {
       sort_order: s.sort_order || 0,
       active: s.active !== false,
       available: s.available !== false,
+      profile_id: s.profile_id || '',
     })
+    setProfileSearch('')
+    setProfileMatches([])
+  }
+
+  const searchProfiles = async (q) => {
+    setProfileSearch(q)
+    if (!q.trim()) { setProfileMatches([]); return }
+    const { data } = await supabase.from('profiles')
+      .select('id, name, gmail, role, aid')
+      .in('role', ['staff', 'runner', 'admin'])
+      .or(`name.ilike.%${q}%,gmail.ilike.%${q}%,aid.ilike.%${q.toUpperCase()}%`)
+      .limit(10)
+    setProfileMatches(data || [])
   }
 
   const newStaff = async () => {
@@ -2001,6 +2050,7 @@ function StaffAdmin({ staff, reload }) {
       sort_order: parseInt(form.sort_order) || 0,
       active: form.active,
       available: form.available,
+      profile_id: form.profile_id || null,
     }
     const { error } = await supabase.from('staff').update(payload).eq('id', editId)
     if (error) { alert('儲存失敗：' + error.message); return }
@@ -2086,6 +2136,44 @@ function StaffAdmin({ staff, reload }) {
                   <Si label="標籤（逗號分隔）" val={form.tags} onChange={v => setForm({ ...form, tags: v })} flex={1} />
                   <Si label="擅長遊戲（逗號分隔）" val={form.games} onChange={v => setForm({ ...form, games: v })} flex={1} />
                   <Si label="簡介" val={form.bio} onChange={v => setForm({ ...form, bio: v })} flex={1} />
+
+                  {/* 綁定到員工帳號 */}
+                  <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: 8, border: `1px dashed ${T.border}` }}>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 6, fontWeight: 600 }}>綁定到員工帳號（讓他可以在儀表板看到自己的單）</div>
+                    {form.profile_id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: T.accentSoft, borderRadius: 5 }}>
+                        <span style={{ fontSize: 11, color: T.accent, fontFamily: 'Sora' }}>✓ 已綁定 · ID: {String(form.profile_id).slice(0, 8)}...</span>
+                        <button onClick={() => setForm({ ...form, profile_id: '' })} style={{
+                          background: 'rgba(248,113,113,.08)', color: T.danger,
+                          border: `1px solid rgba(248,113,113,.15)`,
+                          padding: '3px 10px', borderRadius: 4, fontSize: 10,
+                        }}>解除綁定</button>
+                      </div>
+                    ) : (
+                      <div>
+                        <input value={profileSearch} onChange={e => searchProfiles(e.target.value)}
+                          placeholder="搜尋姓名 / Gmail / aid..."
+                          style={{
+                            background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+                            borderRadius: 5, padding: '5px 8px', color: T.text, fontSize: 11, width: '100%',
+                          }} />
+                        {profileMatches.length > 0 && (
+                          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {profileMatches.map(p => (
+                              <button key={p.id} onClick={() => { setForm({ ...form, profile_id: p.id }); setProfileSearch(''); setProfileMatches([]) }} style={{
+                                background: T.surface, color: T.text, border: `1px solid ${T.border}`,
+                                padding: '5px 10px', borderRadius: 4, fontSize: 11, textAlign: 'left',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              }}>
+                                <span>{p.name || p.gmail || '(無名)'} {p.aid && <span style={{ color: T.textMuted, fontSize: 9 }}>#{p.aid}</span>}</span>
+                                <RoleBadge role={p.role} size="sm" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textSub }}>
                       <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} style={{ accentColor: T.accent }} />
@@ -2650,6 +2738,529 @@ function PermissionAdmin({ currentUserId }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ═══════════ CURRENCY HELPERS ═══════════
+function getCurrency(fxRates, code) {
+  return fxRates.find(r => r.currency_code === code) || fxRates.find(r => r.is_default) || fxRates[0]
+}
+
+function fmtMoney(points, fx) {
+  if (!fx || !points) return ''
+  const amount = Number(points) * Number(fx.rate_per_point)
+  return `${fx.symbol}${amount.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`
+}
+
+function CurrencyPicker({ fxRates, value, onChange, compact }) {
+  if (fxRates.length === 0) return null
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} style={{
+      background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+      borderRadius: 8, padding: compact ? '4px 8px' : '6px 12px',
+      color: T.text, fontSize: compact ? 11 : 12, fontFamily: 'Sora', fontWeight: 600,
+    }}>
+      {fxRates.map(r => (
+        <option key={r.currency_code} value={r.currency_code}>{r.symbol} {r.currency_code}</option>
+      ))}
+    </select>
+  )
+}
+
+// ═══════════ EMPLOYEE DASHBOARD ═══════════
+function EmployeeDashboard({ profile, orders, staff, fxRates, prefCurrency, setPrefCurrency, loadOrders, reloadStaff, reloadProfile, isDesktop }) {
+  const [tab, setTab] = useState('pending')
+  const [busy, setBusy] = useState(null)
+
+  const me = staff.find(s => s.profile_id === profile.id)
+  const myOrders = orders.filter(o => o.staff_id && me && o.staff_id === me.id)
+
+  const pending = myOrders.filter(o => o.status === 'pending')
+  const accepted = myOrders.filter(o => o.status === 'accepted')
+  const completed = myOrders.filter(o => o.status === 'completed')
+
+  // 累積收入：已完成單的點數總和
+  const totalPoints = completed.reduce((sum, o) => sum + (o.points_cost || 0), 0)
+  const monthPoints = completed.filter(o => {
+    const d = new Date(o.completed_at || o.created_at)
+    const now = new Date()
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  }).reduce((sum, o) => sum + (o.points_cost || 0), 0)
+
+  const fx = getCurrency(fxRates, prefCurrency)
+
+  const startOrder = async (orderId) => {
+    setBusy(orderId)
+    const { data, error } = await supabase.rpc('staff_start_order', { p_order_id: orderId })
+    setBusy(null)
+    if (error) { alert('失敗：' + error.message); return }
+    if (!data?.ok) { alert(data?.error || '失敗'); return }
+    await loadOrders()
+    await reloadStaff()
+  }
+
+  const completeOrder = async (orderId) => {
+    if (!confirm('確認此訂單已完成？完成後將計入收益。')) return
+    setBusy(orderId)
+    const { data, error } = await supabase.rpc('staff_complete_order', { p_order_id: orderId })
+    setBusy(null)
+    if (error) { alert('失敗：' + error.message); return }
+    if (!data?.ok) { alert(data?.error || '失敗'); return }
+    await loadOrders()
+    await reloadStaff()
+  }
+
+  const toggleAvailable = async () => {
+    if (!me) return
+    const { error } = await supabase.from('staff').update({ available: !me.available }).eq('id', me.id)
+    if (error) { alert('切換失敗：' + error.message); return }
+    await reloadStaff()
+  }
+
+  if (!me) {
+    return (
+      <div style={{ padding: 30, textAlign: 'center', background: T.surface, borderRadius: 14, border: `1px solid ${T.border}` }}>
+        <div style={{ fontSize: 14, marginBottom: 8 }}>您的員工資料尚未建立</div>
+        <div style={{ fontSize: 12, color: T.textMuted }}>請聯絡管理員到「員工管理」幫您建立員工卡片，並關聯到您的帳號</div>
+      </div>
+    )
+  }
+
+  const tabConfig = [
+    { k: 'pending',   l: '承接中', n: pending.length, c: T.warn,    desc: '已指派給您但尚未開始的訂單' },
+    { k: 'accepted',  l: '執行中', n: accepted.length, c: '#60A5FA', desc: '正在執行（系統已自動進入勿擾）' },
+    { k: 'completed', l: '已完成', n: completed.length, c: T.success, desc: '已完成的歷史訂單' },
+  ]
+  const list = { pending, accepted, completed }[tab] || []
+
+  return (
+    <div>
+      {/* 頂部：個人卡片 + 上下線開關 */}
+      <div className="fu" style={{
+        background: T.surface, borderRadius: 16, padding: isDesktop ? 24 : 18,
+        border: `1px solid ${T.border}`, marginBottom: 14,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      }}>
+        {me.avatar_url ? (
+          <img src={me.avatar_url} alt="" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: T.gradBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: '#fff', fontFamily: 'Sora' }}>
+            {(me.name || '?')[0]}
+          </div>
+        )}
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: 'Sora', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {me.name}
+            {profile.aid && <span style={{ fontSize: 9, color: T.textMuted, fontFamily: 'Sora', letterSpacing: '1px', background: T.surfaceAlt, padding: '2px 7px', borderRadius: 4 }}>#{profile.aid}</span>}
+          </div>
+          <div style={{ fontSize: 11, color: T.textSub, marginTop: 4 }}>
+            {me.available ? <span style={{ color: T.success }}>● 上線中（可接單）</span> : <span style={{ color: T.warn }}>● 暫停接單</span>}
+            {me.busy_with_order_id && <span style={{ color: '#60A5FA', marginLeft: 8 }}>● 執行中</span>}
+          </div>
+        </div>
+        <button onClick={toggleAvailable} disabled={!!me.busy_with_order_id} style={{
+          background: me.available ? 'rgba(251,191,36,.1)' : T.gradBtn,
+          color: me.available ? T.warn : '#fff',
+          border: me.available ? `1px solid rgba(251,191,36,.2)` : 'none',
+          padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+          opacity: me.busy_with_order_id ? .4 : 1,
+          cursor: me.busy_with_order_id ? 'not-allowed' : 'pointer',
+        }} title={me.busy_with_order_id ? '執行中無法手動下線' : ''}>
+          {me.available ? '我要下線' : '我要上線'}
+        </button>
+      </div>
+
+      {/* 小豬公（收益統計） */}
+      <div className="fu" style={{
+        background: `linear-gradient(135deg, rgba(244,114,182,.08), rgba(251,191,36,.06))`,
+        borderRadius: 16, padding: isDesktop ? 24 : 20,
+        border: `1px solid rgba(251,191,36,.2)`, marginBottom: 14,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ fontSize: 12, color: T.textSub, fontWeight: 600, letterSpacing: '1px' }}>🐷 小豬公</div>
+          <CurrencyPicker fxRates={fxRates} value={prefCurrency} onChange={setPrefCurrency} compact />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>累積收益</div>
+            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'Sora', color: T.gold, lineHeight: 1 }}>
+              {totalPoints.toLocaleString('zh-TW')} <span style={{ fontSize: 14, color: T.textSub }}>點</span>
+            </div>
+            {fx && <div style={{ fontSize: 13, color: T.textSub, marginTop: 4, fontFamily: 'Sora' }}>≈ {fmtMoney(totalPoints, fx)}</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>本月收益</div>
+            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'Sora', color: '#F472B6', lineHeight: 1 }}>
+              {monthPoints.toLocaleString('zh-TW')} <span style={{ fontSize: 14, color: T.textSub }}>點</span>
+            </div>
+            {fx && <div style={{ fontSize: 13, color: T.textSub, marginTop: 4, fontFamily: 'Sora' }}>≈ {fmtMoney(monthPoints, fx)}</div>}
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${T.border}` }}>
+          匯率：1 點 = {fx ? `${fx.symbol}${fx.rate_per_point}` : '－'}　·　僅供試算參考，實際結算依公司規定
+        </div>
+      </div>
+
+      {/* 訂單三 tab */}
+      <div style={{ marginBottom: 14 }}>
+        <h2 style={{ fontFamily: 'Sora', fontSize: 18, fontWeight: 700, marginBottom: 10 }}>📋 我的派單池</h2>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8, background: T.surface, borderRadius: 10, padding: 4, border: `1px solid ${T.border}`, flexWrap: 'wrap' }}>
+          {tabConfig.map(t => (
+            <button key={t.k} onClick={() => setTab(t.k)} style={{
+              flex: '1 1 100px', background: tab === t.k ? T.surfaceAlt : 'transparent',
+              color: tab === t.k ? t.c : T.textSub,
+              border: 'none', padding: '8px 10px', borderRadius: 8,
+              fontSize: 13, fontWeight: tab === t.k ? 700 : 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}>
+              {t.l}
+              {t.n > 0 && (
+                <span style={{
+                  background: tab === t.k ? `${t.c}20` : T.surfaceAlt,
+                  color: tab === t.k ? t.c : T.textMuted,
+                  padding: '1px 7px', borderRadius: 10, fontSize: 10, fontWeight: 700, fontFamily: 'Sora',
+                }}>{t.n}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>{tabConfig.find(t => t.k === tab)?.desc}</div>
+      </div>
+
+      {list.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: T.textMuted, background: T.surface, borderRadius: 14, border: `1px solid ${T.border}` }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
+          <div style={{ fontSize: 13 }}>{tab === 'pending' ? '目前沒有等待您接的訂單' : tab === 'accepted' ? '目前沒有正在執行的訂單' : '尚未完成任何訂單'}</div>
+        </div>
+      ) : list.map(o => {
+        const formData = o.form_data && typeof o.form_data === 'object' ? o.form_data : {}
+        return (
+          <div key={o.id} style={{ background: T.surface, borderRadius: 12, padding: '14px 16px', border: `1px solid ${T.border}`, marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>{o.game_icon || '🎮'}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{o.game_name}</span>
+                <span style={{ color: T.textSub, fontSize: 12 }}>— {o.service_path}</span>
+              </div>
+              <span style={{ color: T.gold, fontSize: 13, fontWeight: 700, fontFamily: 'Sora' }}>
+                💰 {(o.points_cost || 0).toLocaleString()} 點 {fx && <span style={{ color: T.textMuted, fontSize: 11 }}>≈ {fmtMoney(o.points_cost || 0, fx)}</span>}
+              </span>
+            </div>
+            {Object.keys(formData).length > 0 && (
+              <div style={{ marginTop: 6, padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, fontSize: 11 }}>
+                {Object.entries(formData).map(([k, v]) => (
+                  <div key={k}><span style={{ color: T.textMuted }}>{k}：</span><span style={{ color: T.textSub }}>{Array.isArray(v) ? v.join('、') : String(v)}</span></div>
+                ))}
+              </div>
+            )}
+            {o.note && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>💬 {o.note}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 10, color: T.textMuted }}>#{o.id.slice(0, 8)} · {new Date(o.created_at).toLocaleString('zh-TW')}</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {tab === 'pending' && (
+                  <button onClick={() => startOrder(o.id)} disabled={busy === o.id} style={{
+                    background: T.gradBtn, color: '#fff', border: 'none',
+                    padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    opacity: busy === o.id ? .5 : 1,
+                  }}>{busy === o.id ? '處理中...' : '開始執行 →'}</button>
+                )}
+                {tab === 'accepted' && (
+                  <button onClick={() => completeOrder(o.id)} disabled={busy === o.id} style={{
+                    background: 'rgba(52,211,153,.12)', color: T.success,
+                    border: `1px solid rgba(52,211,153,.25)`,
+                    padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    opacity: busy === o.id ? .5 : 1,
+                  }}>{busy === o.id ? '處理中...' : '✓ 完成訂單'}</button>
+                )}
+                {tab === 'completed' && o.completed_at && (
+                  <span style={{ fontSize: 10, color: T.success }}>✓ {new Date(o.completed_at).toLocaleDateString('zh-TW')} 完成</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ═══════════ FX RATES ADMIN ═══════════
+function FxAdmin({ fxRates, reload }) {
+  const [editId, setEditId] = useState(null)
+  const [form, setForm] = useState({})
+  const [adding, setAdding] = useState(false)
+  const [newForm, setNewForm] = useState({ currency_code: '', currency_name: '', symbol: '', rate_per_point: '', is_default: false, sort_order: 99 })
+
+  const startEdit = (r) => {
+    setEditId(r.currency_code)
+    setForm({
+      currency_name: r.currency_name,
+      symbol: r.symbol,
+      rate_per_point: String(r.rate_per_point),
+      is_default: r.is_default,
+      sort_order: r.sort_order,
+      active: r.active,
+    })
+  }
+
+  const save = async () => {
+    const payload = {
+      currency_name: form.currency_name,
+      symbol: form.symbol,
+      rate_per_point: parseFloat(form.rate_per_point) || 0,
+      is_default: form.is_default,
+      sort_order: parseInt(form.sort_order) || 0,
+      active: form.active,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('fx_rates').update(payload).eq('currency_code', editId)
+    if (error) { alert('儲存失敗：' + error.message); return }
+    setEditId(null)
+    reload()
+  }
+
+  const addNew = async () => {
+    if (!newForm.currency_code.trim() || !newForm.symbol.trim()) { alert('請填寫幣別代碼與符號'); return }
+    const payload = {
+      currency_code: newForm.currency_code.trim().toUpperCase(),
+      currency_name: newForm.currency_name.trim() || newForm.currency_code.trim().toUpperCase(),
+      symbol: newForm.symbol.trim(),
+      rate_per_point: parseFloat(newForm.rate_per_point) || 0,
+      is_default: !!newForm.is_default,
+      sort_order: parseInt(newForm.sort_order) || 99,
+    }
+    const { error } = await supabase.from('fx_rates').insert(payload)
+    if (error) { alert('新增失敗：' + error.message); return }
+    setAdding(false)
+    setNewForm({ currency_code: '', currency_name: '', symbol: '', rate_per_point: '', is_default: false, sort_order: 99 })
+    reload()
+  }
+
+  const remove = async (code) => {
+    if (!confirm(`確定刪除 ${code}？`)) return
+    await supabase.from('fx_rates').delete().eq('currency_code', code)
+    reload()
+  }
+
+  return (
+    <div>
+      <div style={{ background: T.accentSoft, borderRadius: 10, padding: 12, marginBottom: 14, border: `1px solid rgba(129,140,248,.15)`, fontSize: 12, color: T.textSub, lineHeight: 1.7 }}>
+        💡 設定 1 點等於多少各幣值的金錢，員工儀表板的「小豬公」會用這個換算。<br />
+        員工可在儀表板右上角自由切換要看的幣別。
+      </div>
+
+      {fxRates.map(r => (
+        editId === r.currency_code ? (
+          <div key={r.currency_code} style={{ background: T.surface, borderRadius: 10, padding: 14, border: `1px solid ${T.accent}`, marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, fontFamily: 'Sora', letterSpacing: '1px' }}>
+              編輯 {r.currency_code}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+              <Si label="名稱" val={form.currency_name} onChange={v => setForm({ ...form, currency_name: v })} />
+              <Si label="符號" val={form.symbol} onChange={v => setForm({ ...form, symbol: v })} />
+              <Si label="1 點 = ?" val={form.rate_per_point} onChange={v => setForm({ ...form, rate_per_point: v })} />
+              <Si label="排序" val={String(form.sort_order)} onChange={v => setForm({ ...form, sort_order: parseInt(v) || 0 })} />
+            </div>
+            <div style={{ display: 'flex', gap: 14, marginBottom: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textSub }}>
+                <input type="checkbox" checked={form.is_default} onChange={e => setForm({ ...form, is_default: e.target.checked })} style={{ accentColor: T.accent }} />
+                設為預設幣別
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textSub }}>
+                <input type="checkbox" checked={form.active !== false} onChange={e => setForm({ ...form, active: e.target.checked })} style={{ accentColor: T.accent }} />
+                啟用
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={save} style={{ background: T.gradBtn, color: '#fff', border: 'none', padding: '7px 18px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>儲存</button>
+              <button onClick={() => setEditId(null)} style={{ background: 'transparent', color: T.textSub, border: `1px solid ${T.border}`, padding: '7px 18px', borderRadius: 6, fontSize: 12 }}>取消</button>
+            </div>
+          </div>
+        ) : (
+          <div key={r.currency_code} style={{
+            background: T.surface, borderRadius: 10, padding: '12px 16px',
+            border: `1px solid ${r.is_default ? T.accent : T.border}`, marginBottom: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <code style={{ background: T.surfaceAlt, color: T.text, padding: '4px 10px', borderRadius: 6, fontFamily: 'Sora', fontSize: 13, fontWeight: 700, minWidth: 50, textAlign: 'center' }}>{r.currency_code}</code>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {r.currency_name} {r.is_default && <span style={{ fontSize: 9, color: T.accent, background: T.accentSoft, padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>預設</span>}
+                </div>
+                <div style={{ fontSize: 12, color: T.gold, fontFamily: 'Sora', marginTop: 2 }}>1 點 = {r.symbol}{r.rate_per_point}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Mb onClick={() => startEdit(r)}>編輯</Mb>
+              <Mb onClick={() => remove(r.currency_code)} d>刪除</Mb>
+            </div>
+          </div>
+        )
+      ))}
+
+      {adding ? (
+        <div style={{ background: T.surface, borderRadius: 10, padding: 14, border: `1px dashed ${T.accent}`, marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600 }}>新增幣別</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+            <Si label="代碼（如 EUR）" val={newForm.currency_code} onChange={v => setNewForm({ ...newForm, currency_code: v.toUpperCase() })} />
+            <Si label="名稱（如 歐元）" val={newForm.currency_name} onChange={v => setNewForm({ ...newForm, currency_name: v })} />
+            <Si label="符號（如 €）" val={newForm.symbol} onChange={v => setNewForm({ ...newForm, symbol: v })} />
+            <Si label="1 點 = ?" val={newForm.rate_per_point} onChange={v => setNewForm({ ...newForm, rate_per_point: v })} />
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={addNew} style={{ background: T.gradBtn, color: '#fff', border: 'none', padding: '7px 18px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>新增</button>
+            <button onClick={() => setAdding(false)} style={{ background: 'transparent', color: T.textSub, border: `1px solid ${T.border}`, padding: '7px 18px', borderRadius: 6, fontSize: 12 }}>取消</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ background: T.accentSoft, color: T.accent, border: `1px dashed rgba(129,140,248,.25)`, padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 500, width: '100%', marginTop: 8 }}>+ 新增幣別</button>
+      )}
+    </div>
+  )
+}
+
+// ═══════════ ASSIGNMENT POOL ADMIN ═══════════
+// Admin 看到「每個員工 vs 他的單」的上帝視角，避免派單錯誤
+function AssignmentPoolAdmin({ orders, staff, loadOrders, reloadStaff }) {
+  const [filter, setFilter] = useState('active')  // active | unassigned | all
+
+  const reassign = async (orderId, staffId) => {
+    const newStaff = staff.find(s => s.id === staffId)
+    await supabase.from('orders').update({
+      staff_id: staffId || null,
+      staff_name: newStaff?.name || null,
+    }).eq('id', orderId)
+    await loadOrders()
+  }
+
+  // 收集每個員工的承接/執行單
+  const employeeStaff = staff.filter(s => s.profile_id)  // 只看綁定帳號的員工
+
+  // 未指派或指派給未綁定 staff 的單
+  const unassignedOrders = orders.filter(o =>
+    (o.status === 'pending' || o.status === 'accepted') &&
+    (!o.staff_id || !staff.find(s => s.id === o.staff_id))
+  )
+
+  return (
+    <div>
+      <div style={{ background: T.accentSoft, borderRadius: 10, padding: 12, marginBottom: 14, border: `1px solid rgba(129,140,248,.15)`, fontSize: 12, color: T.textSub, lineHeight: 1.7 }}>
+        💡 這裡是「每個員工 vs 他的訂單」的上帝視角，可以即時看到誰閒置、誰超派、誰勿擾中。<br />
+        可直接重新指派訂單給其他員工。
+      </div>
+
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { k: 'active', l: '在職員工' },
+          { k: 'unassigned', l: `未指派訂單 (${unassignedOrders.length})` },
+        ].map(t => (
+          <button key={t.k} onClick={() => setFilter(t.k)} style={{
+            background: filter === t.k ? T.accentSoft : 'transparent',
+            color: filter === t.k ? T.accent : T.textSub,
+            border: `1px solid ${filter === t.k ? 'rgba(129,140,248,.25)' : T.border}`,
+            padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+          }}>{t.l}</button>
+        ))}
+      </div>
+
+      {filter === 'unassigned' ? (
+        unassignedOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 30, color: T.textMuted, background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+            ✓ 沒有未指派的訂單
+          </div>
+        ) : unassignedOrders.map(o => (
+          <div key={o.id} style={{ background: T.surface, borderRadius: 10, padding: '12px 14px', border: `1px solid ${T.warn}30`, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>{o.game_icon || '🎮'}</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{o.game_name}</span>
+                <span style={{ color: T.textSub, fontSize: 12 }}>— {o.service_path}</span>
+              </div>
+              <span style={{ color: T.gold, fontSize: 12, fontWeight: 700, fontFamily: 'Sora' }}>💰 {(o.points_cost || 0).toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: T.textMuted }}>
+              <span>指派給：</span>
+              <select value={o.staff_id || ''} onChange={e => reassign(o.id, e.target.value)} style={{
+                background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+                borderRadius: 5, padding: '3px 8px', color: T.text, fontSize: 11,
+              }}>
+                <option value="">－ 未指派 －</option>
+                {staff.filter(s => s.active !== false).map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.busy_with_order_id ? '(執行中)' : s.available === false ? '(離線)' : '(在線)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ))
+      ) : (
+        // 在職員工的池子視圖
+        employeeStaff.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 30, color: T.textMuted, background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+            目前沒有員工綁定帳號。<br />
+            <span style={{ fontSize: 11 }}>請先到「員工管理」幫員工卡片設定 profile_id 對應到帳號</span>
+          </div>
+        ) : employeeStaff.map(s => {
+          const myPending = orders.filter(o => o.staff_id === s.id && o.status === 'pending')
+          const myActive = orders.filter(o => o.staff_id === s.id && o.status === 'accepted')
+          const statusColor = s.busy_with_order_id ? '#60A5FA' : s.available === false ? T.warn : T.success
+          const statusText = s.busy_with_order_id ? '執行中（勿擾）' : s.available === false ? '離線' : '在線'
+          const totalLoad = myPending.length + myActive.length
+          return (
+            <div key={s.id} style={{ background: T.surface, borderRadius: 12, padding: 14, border: `1px solid ${T.border}`, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                {s.avatar_url ? (
+                  <img src={s.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: T.gradBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff' }}>{(s.name || '?')[0]}</div>
+                )}
+                <div style={{ flex: 1, minWidth: 100 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{s.name}</div>
+                  <div style={{ fontSize: 10, color: statusColor, marginTop: 2 }}>● {statusText}</div>
+                </div>
+                <div style={{ fontSize: 11, color: T.textMuted, fontFamily: 'Sora' }}>
+                  承接 <strong style={{ color: T.warn }}>{myPending.length}</strong> · 執行 <strong style={{ color: '#60A5FA' }}>{myActive.length}</strong>
+                </div>
+              </div>
+              {totalLoad === 0 ? (
+                <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 8 }}>池子空著</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {[...myActive, ...myPending].map(o => (
+                    <div key={o.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                      padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, fontSize: 11,
+                      borderLeft: `2px solid ${o.status === 'accepted' ? '#60A5FA' : T.warn}`,
+                      flexWrap: 'wrap',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: 9, color: o.status === 'accepted' ? '#60A5FA' : T.warn, fontWeight: 700 }}>
+                          {o.status === 'accepted' ? '執行中' : '待接'}
+                        </span>
+                        <span>{o.game_icon} {o.game_name}</span>
+                        <span style={{ color: T.textMuted }}>— {o.service_path}</span>
+                      </div>
+                      <select value={o.staff_id || ''} onChange={e => reassign(o.id, e.target.value)} style={{
+                        background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+                        borderRadius: 4, padding: '2px 6px', color: T.text, fontSize: 10,
+                      }} title="重新指派">
+                        <option value={s.id}>{s.name}（目前）</option>
+                        <option value="">－ 取消指派 －</option>
+                        {staff.filter(x => x.id !== s.id && x.active !== false).map(x => (
+                          <option key={x.id} value={x.id}>→ {x.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })
+      )}
     </div>
   )
 }
