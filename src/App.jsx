@@ -74,6 +74,7 @@ export default function App() {
   const [orders, setOrders] = useState([])
   const [ann, setAnn] = useState([])
   const [showAuth, setShowAuth] = useState(false)
+  const [showInvite, setShowInvite] = useState(false)
   const [loading, setLoading] = useState(true)
   const isDesktop = useIsDesktop()
 
@@ -167,7 +168,13 @@ export default function App() {
     setPage('home')
   }
 
-  const isAdmin = profile?.role === 'admin'
+  const role = profile?.role || 'user'
+  const perms = profile?.permissions || {}
+  const isAdmin = role === 'admin'
+  const isStaff = role === 'staff'
+  const isRunner = role === 'runner'
+  const canAccessBackoffice = isAdmin || isStaff
+  const can = (key) => isAdmin || (isStaff && !!perms[key])
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -210,7 +217,7 @@ export default function App() {
           <div style={{ display: 'flex', gap: 2 }}>
             {[
               { k: 'home', l: '首頁' }, { k: 'order', l: '下單' }, { k: 'profile', l: '我的' },
-              ...(isAdmin ? [{ k: 'admin', l: '後台' }] : []),
+              ...(canAccessBackoffice ? [{ k: 'admin', l: '後台' }] : []),
             ].map(n => (
               <button key={n.k} onClick={() => {
                 if ((n.k === 'profile' || n.k === 'admin') && !user) { setShowAuth(true); return }
@@ -249,6 +256,7 @@ export default function App() {
               }}>{(profile?.name || user.email)[0]}</div>
             )}
             {isDesktop && <span style={{ fontSize: 13, fontWeight: 500 }}>{profile?.name || user.email}</span>}
+            {role !== 'user' && <RoleBadge role={role} />}
             <button onClick={handleLogout} style={{
               background: 'rgba(248,113,113,.06)', color: T.danger,
               border: `1px solid rgba(248,113,113,.12)`, padding: '4px 10px',
@@ -264,6 +272,7 @@ export default function App() {
       </nav>
 
       {showAuth && <AuthModal close={() => setShowAuth(false)} />}
+      {showInvite && user && <InviteCodeModal close={() => setShowInvite(false)} onSuccess={() => loadProfile(user.id)} />}
 
       <div style={{ maxWidth: page === 'order' && isDesktop ? 1280 : 1060, margin: '0 auto', padding: isDesktop ? '32px 24px 80px' : '24px 14px 80px' }}>
         {page === 'home' && <HomePage ann={ann} catalog={catalogTree} staff={staff} go={setPage} isDesktop={isDesktop} />}
@@ -272,14 +281,103 @@ export default function App() {
             ? <DesktopOrder catalog={catalogTree} staff={staff} user={user} profile={profile} addOrder={addOrder} auth={() => setShowAuth(true)} />
             : <MobileOrder catalog={catalogTree} staff={staff} user={user} profile={profile} addOrder={addOrder} auth={() => setShowAuth(true)} />
         )}
-        {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} staff={staff} isDesktop={isDesktop} loadOrders={loadOrders} reloadProfile={() => loadProfile(user.id)} />}
-        {page === 'admin' && isAdmin && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} ann={ann} reloadAnnouncements={loadAnnouncements} />}
+        {page === 'profile' && user && <ProfilePage profile={profile} orders={orders} staff={staff} isDesktop={isDesktop} loadOrders={loadOrders} reloadProfile={() => loadProfile(user.id)} role={role} openInvite={() => setShowInvite(true)} />}
+        {page === 'admin' && canAccessBackoffice && <AdminPage catalog={catalog} catalogTree={catalogTree} reload={loadCatalog} orders={orders} loadOrders={loadOrders} staff={staff} reloadStaff={loadStaff} ann={ann} reloadAnnouncements={loadAnnouncements} role={role} can={can} profile={profile} reloadProfile={() => loadProfile(user.id)} />}
       </div>
     </div>
   )
 }
 
 // ═══════════ AUTH ═══════════
+// ═══════════ ROLE BADGE ═══════════
+const ROLE_INFO = {
+  admin: { label: 'Admin', color: '#F472B6', bg: 'rgba(244,114,182,.12)' },
+  staff: { label: 'Staff', color: '#60A5FA', bg: 'rgba(96,165,250,.12)' },
+  runner: { label: 'Runner', color: '#34D399', bg: 'rgba(52,211,153,.12)' },
+  user: { label: '客戶', color: '#8B8DA8', bg: 'rgba(139,141,168,.12)' },
+}
+
+function RoleBadge({ role, size = 'md' }) {
+  const info = ROLE_INFO[role] || ROLE_INFO.user
+  const sm = size === 'sm'
+  return (
+    <span style={{
+      background: info.bg, color: info.color,
+      padding: sm ? '1px 6px' : '2px 9px', borderRadius: 10,
+      fontSize: sm ? 9 : 10, fontWeight: 700, fontFamily: 'Sora',
+      letterSpacing: '0.5px',
+    }}>{info.label}</span>
+  )
+}
+
+// ═══════════ INVITE CODE REDEEM MODAL ═══════════
+function InviteCodeModal({ close, onSuccess }) {
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
+
+  const submit = async () => {
+    const trimmed = code.trim().toUpperCase()
+    if (trimmed.length !== 10) { setErr('邀請碼必須是 10 碼'); return }
+    setBusy(true); setErr(''); setOk('')
+    const { data, error } = await supabase.rpc('redeem_invite_code', { p_code: trimmed })
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    if (!data?.ok) { setErr(data?.error || '兌換失敗'); return }
+    setOk(data.message || '兌換成功！')
+    setTimeout(() => { onSuccess?.(); close() }, 1200)
+  }
+
+  return (
+    <div onClick={close} style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(12px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} className="fu" style={{
+        background: T.surface, borderRadius: 18, padding: 32, width: '100%', maxWidth: 400,
+        border: `1px solid ${T.border}`,
+      }}>
+        <h2 style={{ fontFamily: 'Sora', fontSize: 20, fontWeight: 700, marginBottom: 6 }}>輸入員工邀請碼</h2>
+        <p style={{ color: T.textSub, fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
+          請輸入由管理員提供的 10 碼邀請碼。<br />
+          邀請碼有效期 5 分鐘，且僅能使用一次。
+        </p>
+        <input
+          value={code}
+          onChange={e => { setCode(e.target.value.toUpperCase().slice(0, 10)); setErr('') }}
+          onKeyDown={e => { if (e.key === 'Enter' && !busy) submit() }}
+          placeholder="例如：A3K9XQ7M2P"
+          autoFocus
+          style={{
+            width: '100%', background: 'rgba(255,255,255,.04)',
+            border: `1px solid ${err ? T.danger : T.border}`, borderRadius: 10,
+            padding: '12px 16px', color: T.text, fontSize: 18, fontWeight: 700,
+            fontFamily: 'Sora', letterSpacing: '4px', textAlign: 'center',
+            marginBottom: 12,
+          }}
+        />
+        {err && <div style={{ color: T.danger, fontSize: 12, marginBottom: 10 }}>{err}</div>}
+        {ok && <div style={{ color: T.success, fontSize: 13, marginBottom: 10, fontWeight: 600 }}>✓ {ok}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={close} disabled={busy} style={{
+            flex: 1, background: 'transparent', color: T.textSub,
+            border: `1px solid ${T.border}`, padding: '10px', borderRadius: 10,
+            fontSize: 13, fontWeight: 500,
+          }}>取消</button>
+          <button onClick={submit} disabled={busy || code.length !== 10} style={{
+            flex: 2, background: (busy || code.length !== 10) ? T.surfaceAlt : T.gradBtn,
+            color: (busy || code.length !== 10) ? T.textMuted : '#fff',
+            border: 'none', padding: '10px', borderRadius: 10,
+            fontSize: 13, fontWeight: 600,
+          }}>{busy ? '驗證中...' : '確認加入'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AuthModal({ close }) {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1121,7 +1219,7 @@ function RedeemCode({ profileId, reloadProfile }) {
 }
 
 // ═══════════ PROFILE ═══════════
-function ProfilePage({ profile, orders, staff, isDesktop, loadOrders, reloadProfile }) {
+function ProfilePage({ profile, orders, staff, isDesktop, loadOrders, reloadProfile, role, openInvite }) {
   const [gmail, setGmail] = useState(profile?.gmail || '')
   const [gmailSaved, setGmailSaved] = useState(false)
   const [gmailEditing, setGmailEditing] = useState(false)
@@ -1208,6 +1306,39 @@ function ProfilePage({ profile, orders, staff, isDesktop, loadOrders, reloadProf
             <RedeemCode profileId={profile?.id} reloadProfile={reloadProfile} />
           </div>
         </div>
+
+        {/* 員工邀請碼入口（只對普通用戶顯示） */}
+        {role === 'user' && (
+          <div onClick={openInvite} style={{
+            background: T.surfaceAlt, borderRadius: 12, padding: '12px 16px',
+            border: `1px dashed ${T.borderLight}`, marginBottom: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', transition: 'border-color .2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
+          onMouseLeave={e => e.currentTarget.style.borderColor = T.borderLight}
+          >
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 2 }}>有員工邀請碼？</div>
+              <div style={{ fontSize: 11, color: T.textMuted }}>輸入邀請碼成為比比拉普團隊成員</div>
+            </div>
+            <span style={{ color: T.accent, fontSize: 12, fontWeight: 600 }}>輸入 →</span>
+          </div>
+        )}
+
+        {/* 角色標示（給 runner / staff / admin 看的） */}
+        {role !== 'user' && (
+          <div style={{
+            background: ROLE_INFO[role].bg, borderRadius: 12,
+            padding: '12px 16px', border: `1px solid ${ROLE_INFO[role].color}30`,
+            marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <RoleBadge role={role} />
+            <span style={{ fontSize: 12, color: T.textSub }}>
+              您是比比拉普 <span style={{ color: ROLE_INFO[role].color, fontWeight: 700 }}>{ROLE_INFO[role].label}</span> 帳戶
+            </span>
+          </div>
+        )}
 
         {/* Gmail 綁定區塊 */}
         <div style={{
@@ -1356,6 +1487,8 @@ const Icon = {
   staff: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   orders: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>,
   home: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+  shield: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+  ticket: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><line x1="13" y1="5" x2="13" y2="7"/><line x1="13" y1="11" x2="13" y2="13"/><line x1="13" y1="17" x2="13" y2="19"/></svg>,
   chevron: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
   collapse: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
   menu: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
@@ -1396,15 +1529,37 @@ const ADMIN_TOOLS = [
     description: '管理首頁公告、可附帶連結',
     render: (ctx) => <AnnouncementAdmin ann={ctx.ann} reload={ctx.reloadAnnouncements} />,
   },
+  {
+    id: 'invites',
+    label: '邀請碼',
+    group: '權限',
+    icon: 'ticket',
+    description: '生成 Runner / Staff 邀請碼，5 分鐘時效一次性',
+    requires: (ctx) => ctx.role === 'admin' || (ctx.role === 'staff' && ctx.can?.('can_invite')),
+    render: (ctx) => <InviteCodeAdmin role={ctx.role} />,
+  },
+  {
+    id: 'permissions',
+    label: '權限管理',
+    group: '權限',
+    icon: 'shield',
+    description: '調整使用者角色與 Staff 細部權限（僅 Admin）',
+    requires: (ctx) => ctx.role === 'admin',
+    render: (ctx) => <PermissionAdmin currentUserId={ctx.profile?.id} />,
+  },
   // 之後要加新工具，在這裡加一筆即可
-  // { id: 'finance', label: '會計報表', group: '財務', icon: '...', render: (ctx) => <FinanceAdmin /> },
+  // { id: 'finance', label: '會計報表', group: '財務', icon: '...', requires: (ctx) => ctx.role === 'admin', render: (ctx) => <FinanceAdmin /> },
 ]
 
 function AdminPage(ctx) {
-  const [activeId, setActiveId] = useState(ADMIN_TOOLS[0].id)
+  // 依 requires() 過濾掉沒權限的工具
+  const allowedTools = ADMIN_TOOLS.filter(t => !t.requires || t.requires(ctx))
+  const [activeId, setActiveId] = useState(allowedTools[0]?.id || ADMIN_TOOLS[0].id)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const isDesktop = useIsDesktop(900)
-  const active = ADMIN_TOOLS.find(t => t.id === activeId) || ADMIN_TOOLS[0]
+  let active = allowedTools.find(t => t.id === activeId)
+  // 切到的工具失去權限（例如 admin 把自己降級）→ 回到第一個合法工具
+  if (!active && allowedTools.length > 0) active = allowedTools[0]
 
   // 切換工具時觸發 onActivate（例如載入訂單）
   useEffect(() => {
@@ -1416,7 +1571,7 @@ function AdminPage(ctx) {
   // 把工具按 group 分組（保留註冊順序）
   const groups = []
   const groupMap = {}
-  ADMIN_TOOLS.forEach(t => {
+  allowedTools.forEach(t => {
     const g = t.group || '其他'
     if (!groupMap[g]) {
       groupMap[g] = { name: g, items: [] }
@@ -2196,6 +2351,305 @@ function AnnouncementAdmin({ ann, reload }) {
           </div>
         )
       ))}
+    </div>
+  )
+}
+
+// ═══════════ INVITE CODE ADMIN ═══════════
+function InviteCodeAdmin({ role }) {
+  const [codes, setCodes] = useState([])
+  const [generating, setGenerating] = useState(false)
+  const [targetRole, setTargetRole] = useState('runner')
+  const [tick, setTick] = useState(0)  // 強制每秒重畫倒數計時
+
+  // 每秒 tick 一次（讓「剩餘時間」自動倒數）
+  useEffect(() => {
+    const t = setInterval(() => setTick(x => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  const load = async () => {
+    const { data } = await supabase.from('invite_codes')
+      .select('*').order('created_at', { ascending: false }).limit(50)
+    if (data) setCodes(data)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const generate = async () => {
+    setGenerating(true)
+    const { data, error } = await supabase.rpc('create_invite_code', { p_target_role: targetRole })
+    setGenerating(false)
+    if (error) { alert('生成失敗：' + error.message); return }
+    if (!data?.ok) { alert(data?.error || '生成失敗'); return }
+    await load()
+  }
+
+  const copy = async (code) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      alert(`已複製：${code}`)
+    } catch {
+      alert(`請手動複製：${code}`)
+    }
+  }
+
+  // 計算剩餘秒數
+  const formatRemaining = (expires_at) => {
+    const ms = new Date(expires_at).getTime() - Date.now()
+    if (ms <= 0) return null
+    const s = Math.floor(ms / 1000)
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+
+  // 分類
+  const valid = codes.filter(c => !c.used_at && new Date(c.expires_at) > new Date())
+  const used = codes.filter(c => c.used_at)
+  const expired = codes.filter(c => !c.used_at && new Date(c.expires_at) <= new Date())
+
+  return (
+    <div>
+      {/* 生成區 */}
+      <div style={{ background: T.surface, borderRadius: 12, padding: 18, border: `1px solid ${T.border}`, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 10, fontWeight: 600 }}>生成新邀請碼</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {role === 'admin' && (
+            <select value={targetRole} onChange={e => setTargetRole(e.target.value)} style={{
+              background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+              borderRadius: 8, padding: '8px 12px', color: T.text, fontSize: 13,
+            }}>
+              <option value="runner">Runner（一般員工）</option>
+              <option value="staff">Staff（管理員）</option>
+            </select>
+          )}
+          <button onClick={generate} disabled={generating} style={{
+            background: T.gradBtn, color: '#fff', border: 'none',
+            padding: '8px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            opacity: generating ? .6 : 1, flex: 1, minWidth: 140,
+          }}>{generating ? '生成中...' : '生成 10 碼邀請碼'}</button>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 10, lineHeight: 1.6 }}>
+          • 10 碼大寫英數，5 分鐘有效，僅能使用一次<br />
+          • 受邀者需登入後在個人頁面輸入此碼以加入團隊
+        </div>
+      </div>
+
+      {/* 有效中 */}
+      <Collapsible title="有效中的邀請碼" count={valid.length} defaultOpen>
+        {valid.length === 0 ? (
+          <div style={{ color: T.textMuted, fontSize: 12, textAlign: 'center', padding: 14 }}>沒有有效的邀請碼，按上方按鈕生成</div>
+        ) : valid.map(c => {
+          const remaining = formatRemaining(c.expires_at)
+          return (
+            <div key={c.code} style={{
+              background: T.surfaceAlt, borderRadius: 8,
+              padding: '10px 14px', marginBottom: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <code style={{
+                  fontFamily: 'Sora', fontSize: 16, fontWeight: 700,
+                  letterSpacing: '2px', color: T.text,
+                  background: 'rgba(255,255,255,.04)', padding: '4px 10px', borderRadius: 6,
+                }}>{c.code}</code>
+                <RoleBadge role={c.target_role} size="sm" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: remaining ? T.warn : T.danger, fontFamily: 'Sora', fontWeight: 600 }}>
+                  ⏱ {remaining || '已過期'}
+                </span>
+                <button onClick={() => copy(c.code)} style={{
+                  background: T.accentSoft, color: T.accent,
+                  border: `1px solid rgba(129,140,248,.2)`,
+                  padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                }}>複製</button>
+              </div>
+            </div>
+          )
+        })}
+      </Collapsible>
+
+      {/* 已使用 */}
+      <Collapsible title="已使用" count={used.length}>
+        {used.length === 0 ? (
+          <div style={{ color: T.textMuted, fontSize: 12, textAlign: 'center', padding: 14 }}>尚無已使用記錄</div>
+        ) : used.map(c => (
+          <div key={c.code} style={{
+            background: T.surfaceAlt, borderRadius: 6,
+            padding: '8px 12px', marginBottom: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+          }}>
+            <code style={{ fontFamily: 'Sora', fontSize: 12, color: T.textMuted, letterSpacing: '1px' }}>{c.code}</code>
+            <span style={{ fontSize: 10, color: T.textMuted }}>
+              {new Date(c.used_at).toLocaleString('zh-TW')} · {c.target_role}
+            </span>
+          </div>
+        ))}
+      </Collapsible>
+
+      {/* 已過期未使用 */}
+      <Collapsible title="已過期" count={expired.length}>
+        {expired.length === 0 ? (
+          <div style={{ color: T.textMuted, fontSize: 12, textAlign: 'center', padding: 14 }}>沒有過期未使用的邀請碼</div>
+        ) : expired.map(c => (
+          <div key={c.code} style={{
+            background: T.surfaceAlt, borderRadius: 6,
+            padding: '8px 12px', marginBottom: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+          }}>
+            <code style={{ fontFamily: 'Sora', fontSize: 12, color: T.textMuted, letterSpacing: '1px', textDecoration: 'line-through' }}>{c.code}</code>
+            <span style={{ fontSize: 10, color: T.textMuted }}>{new Date(c.expires_at).toLocaleString('zh-TW')}</span>
+          </div>
+        ))}
+      </Collapsible>
+      <div style={{ display: 'none' }}>{tick}</div>
+    </div>
+  )
+}
+
+// ═══════════ PERMISSION ADMIN ═══════════
+const STAFF_PERMISSIONS = [
+  { key: 'can_invite', label: '生成邀請碼', desc: '可以生成 Runner 邀請碼' },
+  { key: 'can_customer_service', label: '客服', desc: '查看與回覆客戶訂單' },
+  { key: 'can_custom_order', label: '下客製單', desc: '建立非標準的客製化訂單' },
+]
+
+function PermissionAdmin({ currentUserId }) {
+  const [users, setUsers] = useState([])
+  const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [saving, setSaving] = useState(null)
+
+  const load = async () => {
+    const { data } = await supabase.from('profiles')
+      .select('id, name, gmail, avatar_url, role, permissions')
+      .order('role')
+    if (data) setUsers(data)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const setRole = async (u, newRole) => {
+    if (u.id === currentUserId && u.role === 'admin' && newRole !== 'admin') {
+      if (!confirm('確定要移除自己的 Admin 權限嗎？這個動作無法在後台還原！')) return
+    }
+    setSaving(u.id)
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', u.id)
+    setSaving(null)
+    if (error) { alert('更新失敗：' + error.message); return }
+    load()
+  }
+
+  const togglePerm = async (u, key) => {
+    const current = u.permissions || {}
+    const next = { ...current, [key]: !current[key] }
+    setSaving(u.id + key)
+    const { error } = await supabase.from('profiles').update({ permissions: next }).eq('id', u.id)
+    setSaving(null)
+    if (error) { alert('更新失敗：' + error.message); return }
+    load()
+  }
+
+  const filtered = users.filter(u => {
+    if (filter !== 'all' && u.role !== filter) return false
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      return (u.name || '').toLowerCase().includes(q) || (u.gmail || '').toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  const counts = {
+    all: users.length,
+    admin: users.filter(u => u.role === 'admin').length,
+    staff: users.filter(u => u.role === 'staff').length,
+    runner: users.filter(u => u.role === 'runner').length,
+    user: users.filter(u => u.role === 'user').length,
+  }
+
+  return (
+    <div>
+      {/* 篩選列 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        {[
+          { k: 'all', l: '全部' },
+          { k: 'admin', l: 'Admin' },
+          { k: 'staff', l: 'Staff' },
+          { k: 'runner', l: 'Runner' },
+          { k: 'user', l: '客戶' },
+        ].map(t => (
+          <button key={t.k} onClick={() => setFilter(t.k)} style={{
+            background: filter === t.k ? T.accentSoft : 'transparent',
+            color: filter === t.k ? T.accent : T.textSub,
+            border: `1px solid ${filter === t.k ? 'rgba(129,140,248,.25)' : T.border}`,
+            padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+          }}>{t.l} <span style={{ fontSize: 10, opacity: .6 }}>({counts[t.k] ?? 0})</span></button>
+        ))}
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋姓名或 Gmail..." style={{
+          background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+          borderRadius: 6, padding: '5px 10px', color: T.text, fontSize: 12, flex: 1, minWidth: 160,
+        }} />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 30, color: T.textMuted, background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+          找不到符合條件的使用者
+        </div>
+      ) : filtered.map(u => {
+        const isCurrentUser = u.id === currentUserId
+        return (
+          <div key={u.id} style={{
+            background: T.surface, borderRadius: 10,
+            border: `1px solid ${T.border}`, padding: '12px 16px', marginBottom: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {u.avatar_url ? (
+                <img src={u.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.gradBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff' }}>{(u.name || '?')[0]}</div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {u.name || '（未設名稱）'}
+                  {isCurrentUser && <span style={{ fontSize: 9, color: T.accent, background: T.accentSoft, padding: '1px 6px', borderRadius: 4 }}>你</span>}
+                </div>
+                {u.gmail && <div style={{ fontSize: 10, color: T.textMuted }}>{u.gmail}</div>}
+              </div>
+              <select value={u.role} onChange={e => setRole(u, e.target.value)} disabled={saving === u.id} style={{
+                background: 'rgba(255,255,255,.04)', border: `1px solid ${T.border}`,
+                borderRadius: 6, padding: '5px 10px', color: T.text, fontSize: 12,
+              }}>
+                <option value="user">客戶</option>
+                <option value="runner">Runner</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            {u.role === 'staff' && (
+              <div style={{
+                marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${T.border}`,
+                display: 'flex', flexWrap: 'wrap', gap: 8,
+              }}>
+                {STAFF_PERMISSIONS.map(p => {
+                  const on = !!u.permissions?.[p.key]
+                  return (
+                    <label key={p.key} title={p.desc} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '5px 10px', background: on ? T.accentSoft : T.surfaceAlt,
+                      border: `1px solid ${on ? T.accent : T.border}`, borderRadius: 6,
+                      cursor: 'pointer', fontSize: 11, fontWeight: 500,
+                      color: on ? T.accent : T.textSub,
+                    }}>
+                      <input type="checkbox" checked={on} onChange={() => togglePerm(u, p.key)} style={{ accentColor: T.accent }} />
+                      {p.label}
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
